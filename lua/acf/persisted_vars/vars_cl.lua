@@ -12,8 +12,3 @@ ACF.PersistClientData("CrateSizeZ", 24)
 ACF.PersistClientData("PlateSizeX", 24)
 ACF.PersistClientData("PlateSizeY", 24)
 ACF.PersistClientData("PlateSizeZ", 5)
-
--- Tank size
-ACF.PersistClientData("TankSizeX", 24)
-ACF.PersistClientData("TankSizeY", 24)
-ACF.PersistClientData("TankSizeZ", 24)
