@@ -63,11 +63,19 @@ Sounds.acf_engine = {
 		}
 	end,
 	SetSound = function(ent, soundData)
-		local Sound = soundData.Sound:Trim():lower()
+		local Sound     = soundData.Sound:Trim():lower()
+		--local Extension = string.GetExtensionFromFilename(Sound)
 
-		ent.SoundPath   = Sound
-		ent.SoundPitch  = soundData.Pitch
-		ent.SoundVolume = soundData.Volume
+		--[[
+		if (Sound ~= "" and not Extension) or not file.Exists("sound/" .. Sound, "GAME") then
+			local Owner = ent:GetPlayer()
+
+			return Messages.SendChat(Owner, "Error", "Couldn't change engine sound, does not exist on server: ", Sound)
+		end
+		--]]
+
+		ent.SoundPath = Sound
+		ent.SoundPitch = soundData.Pitch
 
 		ent:UpdateSound()
 	end,
