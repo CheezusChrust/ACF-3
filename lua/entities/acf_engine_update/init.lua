@@ -794,7 +794,6 @@ function ENT:CalcRPM(SelfTbl)
 
 	SelfTbl.FlywheelTorque = SelfTbl.Torque - math.Clamp(GearboxFeedbackTq, -maxTq, maxTq)
 
-
 	local EngineTorque = SelfTbl.Torque + (GearboxFeedbackTq * GearboxLoad) + ( CompressionBrake * ( 1 - GearboxLoad ) )
 
 	SelfTbl.FlyRPM = SelfTbl.FlyRPM + EngineTorque / math.max(SelfTbl.Inertia, GearboxInertia * GearboxLoad)
