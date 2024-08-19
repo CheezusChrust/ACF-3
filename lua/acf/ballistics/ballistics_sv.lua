@@ -2,6 +2,7 @@ local ACF        = ACF
 local Ballistics = ACF.Ballistics
 local Damage     = ACF.Damage
 local Clock      = ACF.Utilities.Clock
+local Debug		 = ACF.Debug
 
 Ballistics.Bullets         = Ballistics.Bullets or {}
 Ballistics.UnusedIndexes   = Ballistics.UnusedIndexes or {}
@@ -131,10 +132,21 @@ function Ballistics.CreateBullet(BulletData)
 	Bullet.Index       = Index
 	Bullet.LastThink   = Clock.CurTime
 	Bullet.Fuze        = Bullet.Fuze and Bullet.Fuze + Clock.CurTime or nil -- Convert Fuze from fuze length to time of detonation
-	Bullet.Mask        = MASK_SOLID -- Note: MASK_SHOT removed for smaller projectiles as it ignores armor
+	if Bullet.Caliber then
+		Bullet.Mask		= (Bullet.Caliber < 3 and bit.band(MASK_SOLID, MASK_SHOT) or MASK_SOLID) + CONTENTS_AUX -- I hope CONTENTS_AUX isn't used for anything important? I can't find any references outside of the wiki to it so hopefully I can use this
+	else
+		Bullet.Mask		= MASK_SOLID + CONTENTS_AUX
+	end
+
 	Bullet.Ricochets   = 0
 	Bullet.GroundRicos = 0
 	Bullet.Color       = ColorRand(100, 255)
+
+	-- Purely to allow someone to shoot out of a seat without hitting themselves and dying
+	if IsValid(Bullet.Owner) and Bullet.Owner:IsPlayer() and Bullet.Owner:InVehicle() and IsValid(Bullet.Owner:GetVehicle().Alias) then
+		Bullet.Filter[#Bullet.Filter + 1] = Bullet.Owner:GetVehicle()
+		Bullet.Filter[#Bullet.Filter + 1] = Bullet.Owner:GetVehicle().Alias
+	end
 
 	-- TODO: Make bullets use a metatable instead
 	function Bullet:GetPenetration()
@@ -234,7 +246,7 @@ function Ballistics.DoBulletsFlight(Bullet)
 
 	local traceRes = ACF.trace(FlightTr) -- Does not modify the bullet's original filter
 
-	debugoverlay.Line(Bullet.Pos, traceRes.HitPos, 15, Bullet.Color)
+	Debug.Line(Bullet.Pos, traceRes.HitPos, 15, Bullet.Color)
 
 	if Bullet.Fuze and Bullet.Fuze <= Clock.CurTime then
 		if not util.IsInWorld(Bullet.Pos) then -- Outside world, just delete
@@ -357,7 +369,7 @@ do -- Terminal ballistics --------------------------
 	function Ballistics.DoRicochet(Bullet, Trace)
 		local HitAngle = ACF.GetHitAngle(Trace, Bullet.Flight)
 		local Speed    = Bullet.Flight:Length() / ACF.Scale
-		local MinAngle = math.min(Bullet.Ricochet - Speed / 39.37 / 30 + 20,89.9) -- Making the chance of a ricochet get higher as the speeds increase
+		local MinAngle = math.min(Bullet.Ricochet - Speed / 39.37 / 30 + 20, 89.9) -- Making the chance of a ricochet get higher as the speeds increase
 		local Ricochet = 0
 
 		if HitAngle < 89.9 and HitAngle > math.random(MinAngle, 90) then -- Checking for ricochet

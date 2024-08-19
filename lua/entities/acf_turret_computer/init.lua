@@ -9,6 +9,7 @@ local ACF			= ACF
 local Contraption	= ACF.Contraption
 local Classes		= ACF.Classes
 local Utilities		= ACF.Utilities
+local Debug			= ACF.Debug
 local Sounds		= Utilities.Sounds
 local Clock			= Utilities.Clock
 local HookRun		= hook.Run
@@ -72,18 +73,18 @@ do	-- Spawn and Update funcs
 		WireIO.SetupInputs(Entity, Inputs, Data, Class, Computer)
 		WireIO.SetupOutputs(Entity, Outputs, Data, Class, Computer)
 
-		Entity:SetNWString("WireName","ACF " .. Entity.Name)
+		Entity:SetNWString("WireName", "ACF " .. Entity.Name)
 		Entity:SetNWString("Class", Entity.Class)
 
 		WireLib.TriggerOutput(Entity, "Entity", Entity)
 
-		for _,v in ipairs(Entity.DataStore) do
+		for _, v in ipairs(Entity.DataStore) do
 			Entity[v] = Data[v]
 		end
 
 		ACF.Activate(Entity, true)
 
-		Entity.DamageScale	= math.max((Entity.ACF.Health / (Entity.ACF.MaxHealth * 0.75)) - 0.25 / 0.75,0)
+		Entity.DamageScale	= math.max((Entity.ACF.Health / (Entity.ACF.MaxHealth * 0.75)) - 0.25 / 0.75, 0)
 
 		local Mass = Computer.Mass
 		Contraption.SetMass(Entity, Mass)
@@ -92,7 +93,7 @@ do	-- Spawn and Update funcs
 	function MakeACF_BallisticComputer(Player, Pos, Angle, Data)
 		VerifyData(Data)
 
-		local Class = Classes.GetGroup(Turrets,Data.Computer)
+		local Class = Classes.GetGroup(Turrets, Data.Computer)
 		local Limit	= Class.LimitConVar.Name
 
 		if not Player:CheckLimit(Limit) then return end
@@ -192,7 +193,7 @@ do	-- Metamethods and other important stuff
 
 		-- Gun links
 
-		ACF.RegisterClassLink("acf_turret_computer", "acf_gun",function(This,Gun)
+		ACF.RegisterClassLink("acf_turret_computer", "acf_gun", function(This, Gun)
 			if IsValid(This.Gun) then return false, "This computer already has a gun linked!" end
 
 			This.Gun	= Gun
@@ -215,45 +216,54 @@ do	-- Metamethods and other important stuff
 	end
 
 	do	-- Wire stuff
-		ACF.AddInputAction("acf_turret_computer", "Calculate", function(Entity,Value)
+		ACF.AddInputAction("acf_turret_computer", "Calculate", function(Entity, Value)
 			if Entity.Disabled then return end
+			if Entity.Thinking then return end
 
 			if tobool(Value) == true then
-				Entity:StartSimulation()
+				Entity:StartSimulation(false)
+			end
+		end)
+
+		ACF.AddInputAction("acf_turret_computer", "Calculate Superelevation", function(Entity, Value)
+			if Entity.Disabled then return end
+			if Entity.Thinking then return end
+
+			if tobool(Value) == true then
+				Entity:StartSimulation(true)
 			end
 		end)
 	end
 
 	do	-- Simulation stuff
 		-- Starts fresh simulation with fresh data
-		function ENT:StartSimulation()
+		function ENT:StartSimulation(OneShot)
 			if Clock.CurTime < self.NextRun then return end
 			if not IsValid(self.Gun) then return end
 
 			local Gun = self.Gun
+			local BD = Gun.BulletData
 
-			if Gun.State ~= "Loaded" then return end
+			if BD.Type == "Empty" then return end
 
 			self.Status = "Calculating..."
 
-			local BD = Gun.BulletData
-
 			local LocalPosition = self.Inputs["Position"].Value - Gun:LocalToWorld(Gun.Muzzle)
 
-			local StartAngle	= Angle(0,0,0)
+			local StartAngle	= Angle(0, 0, 0)
 
 			local AngleToTarget = LocalPosition:GetNormalized():Angle()
 			AngleToTarget:Normalize()
 
 			if self.ComputerInfo.HighArc then
-				StartAngle = Angle(math.Clamp(Lerp(0.25,-90,AngleToTarget.p),-89,-45),AngleToTarget.y,0)
+				StartAngle = Angle(math.Clamp(Lerp(0.25, -90, AngleToTarget.p), -89, -45), AngleToTarget.y, 0)
 			else
-				StartAngle	= Angle(AngleToTarget.p,AngleToTarget.y,0)
+				StartAngle	= Angle(AngleToTarget.p, AngleToTarget.y, 0)
 			end
 
 			StartAngle:Normalize()
 
-			debugoverlay.Line(Gun:LocalToWorld(Gun.Muzzle),Gun:LocalToWorld(Gun.Muzzle) + StartAngle:Forward() * 32,3,Color(255,0,0),true)
+			Debug.Line(Gun:LocalToWorld(Gun.Muzzle), Gun:LocalToWorld(Gun.Muzzle) + StartAngle:Forward() * 32, 3, Color(255, 0, 0), true)
 
 			self.SimData	= {
 				MuzzleVel		= BD.MuzzleVel,
@@ -280,7 +290,8 @@ do	-- Metamethods and other important stuff
 				DeltaTime		= self.ComputerInfo.DeltaTime,
 				EndTime			= Clock.CurTime + self.ComputerInfo.MaxThinkTime,
 				LastMaxTime		= self.ComputerInfo.MaxThinkTime,
-				StartTime		= Clock.CurTime
+				StartTime		= Clock.CurTime,
+				IsOneShot		= OneShot
 			}
 
 			self.Thinking	= true
@@ -302,8 +313,16 @@ do	-- Metamethods and other important stuff
 			if not self.ComputerInfo.HighArc then
 				if Sim.Pos:DistToSqr(Sim.AdjustedTargetPos - Sim.StartPos) < ((((Sim.FlightDistance + (Sim.RelativeVel * ElapsedTime):Length()) / 100) * self.ComputerInfo.CalcError) ^ 2) then
 
-					WireLib.TriggerOutput(self, "Angle", Sim.StartAngle)
+					WireLib.TriggerOutput(self, "Elevation", Sim.StartAngle.p)
 					WireLib.TriggerOutput(self, "Flight Time", Sim.FlightTime)
+
+					if Sim.IsOneShot then
+						self:HaltSimulation("Super elevation calculated!")
+
+						return false
+					end
+
+					WireLib.TriggerOutput(self, "Angle", Sim.StartAngle)
 
 					if self.ComputerInfo.Constant and tobool(self.Inputs["Calculate"].Value) and IsValid(self.Gun) then
 						local Gun = self.Gun
@@ -312,14 +331,14 @@ do	-- Metamethods and other important stuff
 
 						Sim.StartPos				= Gun:LocalToWorld(Gun.Muzzle)
 
-						Sim.Error = Sim.Error + (Sim.AdjustedTargetPos - (Sim.StartPos + Sim.Pos))
+						Sim.Error					= Sim.Error + (Sim.AdjustedTargetPos - (Sim.StartPos + Sim.Pos))
 
-						local LocalPosition = (Sim.TargetPos - Sim.StartPos) + Sim.Error
+						local LocalPosition			= (Sim.TargetPos - Sim.StartPos) + Sim.Error
 
-						local AngleToTarget = LocalPosition:GetNormalized():Angle()
+						local AngleToTarget			= LocalPosition:GetNormalized():Angle()
 						AngleToTarget:Normalize()
 
-						local StartAngle			= Angle(AngleToTarget.p,AngleToTarget.y,0)
+						local StartAngle			= Angle(AngleToTarget.p, AngleToTarget.y, 0)
 
 						self.SimData.StartAngle		= StartAngle
 						self.SimData.Flight			= StartAngle:Forward() * Sim.MuzzleVel * 39.37
@@ -347,21 +366,21 @@ do	-- Metamethods and other important stuff
 						return false
 					end
 				else
-					Sim.AdjustedTargetPos = Sim.TargetPos + (Sim.RelativeVel * (ElapsedTime + Sim.FlightTime))
+					Sim.AdjustedTargetPos		= Sim.TargetPos + (Sim.RelativeVel * (ElapsedTime + Sim.FlightTime))
 
-					Sim.Error = Sim.Error + (Sim.AdjustedTargetPos - (Sim.StartPos + Sim.Pos))
+					Sim.Error					= Sim.Error + (Sim.AdjustedTargetPos - (Sim.StartPos + Sim.Pos))
 
-					local LocalPosition = (Sim.TargetPos - Sim.StartPos) + Sim.Error
+					local LocalPosition			= (Sim.TargetPos - Sim.StartPos) + Sim.Error
 
-					local AngleToTarget = LocalPosition:GetNormalized():Angle()
+					local AngleToTarget			= LocalPosition:GetNormalized():Angle()
 					AngleToTarget:Normalize()
 
-					local StartAngle			= Angle(AngleToTarget.p,AngleToTarget.y,0)
+					local StartAngle			= Angle(AngleToTarget.p, AngleToTarget.y, 0)
 
 					self.SimData.StartAngle		= StartAngle
 					self.SimData.Flight			= StartAngle:Forward() * Sim.MuzzleVel * 39.37
 
-					debugoverlay.Cross(Sim.StartPos + LocalPosition,3,5,Color(0,0,255),true)
+					Debug.Cross(Sim.StartPos + LocalPosition, 3, 5, Color(0, 0, 255), true)
 
 					self.SimData.Pos			= Vector()
 
@@ -369,9 +388,9 @@ do	-- Metamethods and other important stuff
 					self.SimData.FlightTime		= 0
 
 					self.SimData.LastMaxTime	= self.SimData.LastMaxTime * 0.9
-					self.SimData.EndTime		= math.max(self.SimData.EndTime,Clock.CurTime + self.SimData.LastMaxTime)
+					self.SimData.EndTime		= math.max(self.SimData.EndTime, Clock.CurTime + self.SimData.LastMaxTime)
 
-					self.Thinking = true
+					self.Thinking				= true
 
 					self.Status = "Adjusting..."
 					self:UpdateOverlay()
@@ -394,25 +413,25 @@ do	-- Metamethods and other important stuff
 
 					local LateralDistance	= Sim.StartPos:Distance2D(Sim.StartPos + Sim.Pos)
 
-					local ErrorDir2D	= ((Sim.TargetPos - (Sim.StartPos + Sim.Pos)) * Vector(1,1,0)):GetNormalized()
+					local ErrorDir2D	= ((Sim.TargetPos - (Sim.StartPos + Sim.Pos)) * Vector(1, 1, 0)):GetNormalized()
 					local ErrorDist		= (Sim.StartPos + Sim.Pos):Distance2D(Sim.TargetPos)
 
-					debugoverlay.Line(Sim.StartPos + Sim.Pos,(Sim.StartPos + Sim.Pos) + ErrorDir2D * ErrorDist, 3, Color(255,0,0), true)
+					Debug.Line(Sim.StartPos + Sim.Pos, (Sim.StartPos + Sim.Pos) + ErrorDir2D * ErrorDist, 3, Color(255, 0, 0), true)
 
 					local LocalPosition = (Sim.AdjustedTargetPos - Sim.StartPos)
 
 					local AngleToTarget = LocalPosition:GetNormalized():Angle()
 					AngleToTarget:Normalize()
-					local NextAngle			= -90 + (Sim.StartAngle.p - -90) * (CorrectLateralDistance / math.max(1,LateralDistance))
+					local NextAngle			= -90 + (Sim.StartAngle.p - -90) * (CorrectLateralDistance / math.max(1, LateralDistance))
 					if NextAngle > -25 then self:HaltSimulation("Target unable to be reached!") return false end
-					AngleToTarget.p			= math.Clamp(NextAngle,-90,-25)
+					AngleToTarget.p			= math.Clamp(NextAngle, -90, -25)
 
-					local StartAngle	= Angle(AngleToTarget.p,AngleToTarget.y,0)
+					local StartAngle	= Angle(AngleToTarget.p, AngleToTarget.y, 0)
 
 					self.SimData.StartAngle		= StartAngle
 					self.SimData.Flight			= StartAngle:Forward() * Sim.MuzzleVel * 39.37
 
-					debugoverlay.Cross(Sim.StartPos + LocalPosition,3,5,Color(0,0,255),true)
+					Debug.Cross(Sim.StartPos + LocalPosition, 3, 5, Color(0, 0, 255), true)
 
 					self.SimData.Pos			= Vector()
 
@@ -420,7 +439,7 @@ do	-- Metamethods and other important stuff
 					self.SimData.FlightTime		= 0
 
 					self.SimData.LastMaxTime	= self.SimData.LastMaxTime * 0.9
-					self.SimData.EndTime		= math.max(self.SimData.EndTime,Clock.CurTime + self.SimData.LastMaxTime)
+					self.SimData.EndTime		= math.max(self.SimData.EndTime, Clock.CurTime + self.SimData.LastMaxTime)
 
 					self.Thinking = true
 
@@ -464,7 +483,7 @@ do	-- Metamethods and other important stuff
 
 			Sim.TotalTime		= Sim.TotalTime + DeltaTime
 
-			debugoverlay.Line(Sim.StartPos + Sim.Pos,Sim.StartPos + Sim.NextPos,5,Color(255,0,0),true)
+			Debug.Line(Sim.StartPos + Sim.Pos, Sim.StartPos + Sim.NextPos, 5, Color(255, 0, 0), true)
 
 			local Dir = (Sim.NextPos - Sim.Pos):GetNormalized()
 
@@ -477,15 +496,15 @@ do	-- Metamethods and other important stuff
 					local Ratio = (Sim.Pos:Distance(Point)) / FlightDistance
 					Sim.FlightTime	= Sim.FlightTime + (DeltaTime * Ratio)
 
-					debugoverlay.Line(Sim.StartPos + Sim.Pos,Sim.StartPos + Sim.NextPos,8,Color(0,255,0),true)
-					debugoverlay.Cross(Sim.StartPos + Sim.Pos,15,8,Color(255,0,0),true)
+					Debug.Line(Sim.StartPos + Sim.Pos, Sim.StartPos + Sim.NextPos, 8, Color(0, 255, 0), true)
+					Debug.Cross(Sim.StartPos + Sim.Pos, 15, 8, Color(255, 0, 0), true)
 
 					Sim.Pos		= Point
 
 					Sim.FlightDistance = Sim.FlightDistance + (FlightDistance * Ratio)
 
-					debugoverlay.Cross(Sim.StartPos + Point,15,8,Color(255,255,255),true)
-					debugoverlay.Cross(Sim.StartPos + Sim.NextPos,15,8,Color(0,255,0),true)
+					Debug.Cross(Sim.StartPos + Point, 15, 8, Color(255, 255, 255), true)
+					Debug.Cross(Sim.StartPos + Sim.NextPos, 15, 8, Color(0, 255, 0), true)
 
 					return self:AdjustSimulation()
 				else
@@ -497,7 +516,7 @@ do	-- Metamethods and other important stuff
 				local LowZ	= (Sim.StartPos + Sim.NextPos).z
 				local TargetZ	= Sim.AdjustedTargetPos.z
 
-				if (HighZ >= TargetZ) and (LowZ <= TargetZ) and (Dir:Dot(Vector(0,0,-1)) >= 0) then -- Falling down and near the Z target
+				if (HighZ >= TargetZ) and (LowZ <= TargetZ) and (Dir:Dot(Vector(0, 0, -1)) >= 0) then -- Falling down and near the Z target
 					local Ratio = 1 - ((TargetZ - LowZ) / (HighZ - LowZ))
 
 					Sim.Pos		= Sim.Pos + ((Sim.NextPos - Sim.Pos) * Ratio)
@@ -552,7 +571,7 @@ do	-- Metamethods and other important stuff
 
 			-- Run simulation
 
-			for _ = 1,self.ComputerInfo.Bulk do
+			for _ = 1, self.ComputerInfo.Bulk do
 				if not self.Thinking then break end
 				if not self:RunSimulation() then break end
 			end
@@ -599,14 +618,14 @@ do	-- Metamethods and other important stuff
 		end
 
 		function ENT:ACF_PostDamage()
-			self.DamageScale = math.max((self.ACF.Health / (self.ACF.MaxHealth * 0.75)) - 0.25 / 0.75,0)
+			self.DamageScale = math.max((self.ACF.Health / (self.ACF.MaxHealth * 0.75)) - 0.25 / 0.75, 0)
 		end
 
 		function ENT:ACF_OnRepaired() -- Normally has OldArmor, OldHealth, Armor, and Health passed
-			self.DamageScale = math.max((self.ACF.Health / (self.ACF.MaxHealth * 0.75)) - 0.25 / 0.75,0)
+			self.DamageScale = math.max((self.ACF.Health / (self.ACF.MaxHealth * 0.75)) - 0.25 / 0.75, 0)
 		end
 
-		function ENT:SetActive(Active,Reason)
+		function ENT:SetActive(Active, Reason)
 			local Trigger = (self.Active ~= Active) or (self.InactiveReason ~= Reason)
 			if not Active then
 				self.InactiveReason = Reason

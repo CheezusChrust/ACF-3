@@ -7,14 +7,15 @@ include("shared.lua")
 
 -- Local variables ---------------------------------
 
-local ACF       = ACF
-local Contraption	= ACF.Contraption
-local Utilities = ACF.Utilities
-local Clock     = Utilities.Clock
-local Clamp     = math.Clamp
-local abs       = math.abs
-local min       = math.min
-local HookRun   = hook.Run
+local ACF         = ACF
+local Contraption = ACF.Contraption
+local Utilities   = ACF.Utilities
+local Clock       = Utilities.Clock
+local Clamp       = math.Clamp
+local abs         = math.abs
+local min         = math.min
+local HookRun     = hook.Run
+local MaxDistance = ACF.LinkDistance * ACF.LinkDistance
 
 local function CalcWheel(Entity, Link, Wheel, SelfWorld)
 	local WheelPhys = Wheel:GetPhysicsObject()
@@ -591,6 +592,7 @@ do -- Linking ------------------------------------------
 
 	local function LinkWheel(Gearbox, Wheel)
 		if Gearbox.Wheels[Wheel] then return false, "This wheel is already linked to this gearbox!" end
+		if Gearbox:GetPos():DistToSqr(Wheel:GetPos()) > MaxDistance then return false, "This wheel is too far away from this gearbox!" end
 
 		local Link = GenerateLinkTable(Gearbox, Wheel)
 
@@ -608,12 +610,15 @@ do -- Linking ------------------------------------------
 			end
 		end)
 
+		Gearbox:InvalidateClientInfo()
+
 		return true, "Wheel linked successfully!"
 	end
 
 	local function LinkGearbox(Gearbox, Target)
 		if Gearbox.GearboxOut[Target] then return false, "These gearboxes are already linked to each other!" end
 		if Target.GearboxIn[Gearbox] then return false, "These gearboxes are already linked to each other!" end
+		if Gearbox:GetPos():DistToSqr(Target:GetPos()) > MaxDistance then return false, "These gearboxes are too far away from each other!" end
 		if CheckLoopedGearbox(Gearbox, Target) then return false, "You cannot link gearboxes in a loop!" end
 
 		local Link = GenerateLinkTable(Gearbox, Target)
@@ -622,6 +627,8 @@ do -- Linking ------------------------------------------
 
 		Gearbox.GearboxOut[Target] = Link
 		Target.GearboxIn[Gearbox]  = true
+
+		Gearbox:InvalidateClientInfo()
 
 		return true, "Gearbox linked successfully!"
 	end
@@ -644,6 +651,8 @@ do -- Unlinking ----------------------------------------
 
 			Wheel:RemoveCallOnRemove("ACF_GearboxUnlink" .. Gearbox:EntIndex())
 
+			Gearbox:InvalidateClientInfo()
+
 			return true, "Wheel unlinked successfully!"
 		end
 
@@ -660,6 +669,8 @@ do -- Unlinking ----------------------------------------
 
 			Gearbox.GearboxOut[Target] = nil
 			Target.GearboxIn[Gearbox]  = nil
+
+			Gearbox:InvalidateClientInfo()
 
 			return true, "Gearbox unlinked successfully!"
 		end
@@ -749,7 +760,7 @@ do -- Movement -----------------------------------------
 			self.InGear = true
 		end
 
-		local BoxPhys = Contraption.GetAncestor(self):GetPhysicsObject()
+		local BoxPhys = self:GetAncestor():GetPhysicsObject()
 		local SelfWorld = BoxPhys:LocalToWorldVector(BoxPhys:GetAngleVelocity())
 		local Gear = self.Gear
 
@@ -873,7 +884,7 @@ do -- Movement -----------------------------------------
 		end
 
 		if ReactTq ~= 0 then
-			local BoxPhys = Contraption.GetAncestor(self):GetPhysicsObject()
+			local BoxPhys = self:GetAncestor():GetPhysicsObject()
 
 			if IsValid(BoxPhys) then
 				BoxPhys:ApplyTorqueCenter(self:GetRight() * Clamp(2 * deg(ReactTq * MassRatio) * DeltaTime, -500000, 500000))
@@ -885,8 +896,6 @@ do -- Movement -----------------------------------------
 end ----------------------------------------------------
 
 do -- Braking ------------------------------------------
-	local Contraption = ACF.Contraption
-
 	local function BrakeWheel(Link, Wheel, Brake)
 		local Phys      = Wheel:GetPhysicsObject()
 		local AntiSpazz = 1
@@ -913,7 +922,7 @@ do -- Braking ------------------------------------------
 		if not next(self.Wheels) then return end -- No brakes for the non-wheel users
 		if self.LastBrake == Clock.CurTime then return end -- Don't run this twice in a tick
 
-		local BoxPhys = Contraption.GetAncestor(self):GetPhysicsObject()
+		local BoxPhys = self:GetAncestor():GetPhysicsObject()
 		local SelfWorld = BoxPhys:LocalToWorldVector(BoxPhys:GetAngleVelocity())
 		local DeltaTime = Clock.DeltaTime
 
@@ -998,6 +1007,72 @@ do -- Duplicator Support -------------------------------
 		BaseClass.PostEntityPaste(self, Player, Ent, CreatedEntities)
 	end
 end ----------------------------------------------------
+
+do	-- NET SURFER 2.0
+	util.AddNetworkString("ACF_RequestGearboxInfo")
+	util.AddNetworkString("ACF_InvalidateGearboxInfo")
+
+	function ENT:InvalidateClientInfo()
+		net.Start("ACF_InvalidateGearboxInfo")
+			net.WriteEntity(self)
+		net.Broadcast()
+	end
+
+	net.Receive("ACF_RequestGearboxInfo", function(_, Ply)
+		local Entity = net.ReadEntity()
+
+		if IsValid(Entity) then
+			local Inputs = {}
+			local OutputL = {}
+			local OutputR = {}
+			local Data = {
+				In = Entity.In,
+				OutL = Entity.OutL,
+				OutR = Entity.OutR
+			}
+
+			if next(Entity.GearboxIn) then
+				for E in pairs(Entity.GearboxIn) do
+					Inputs[#Inputs + 1] = E:EntIndex()
+				end
+			end
+
+			if next(Entity.Engines) then
+				for E in pairs(Entity.Engines) do
+					Inputs[#Inputs + 1] = E:EntIndex()
+				end
+			end
+
+			if next(Entity.GearboxOut) then
+				for E, L in pairs(Entity.GearboxOut) do
+					if L.Side == 0 then
+						OutputL[#OutputL + 1] = E:EntIndex()
+					else
+						OutputR[#OutputR + 1] = E:EntIndex()
+					end
+				end
+			end
+
+			if next(Entity.Wheels) then
+				for E, L in pairs(Entity.Wheels) do
+					if L.Side == 0 then
+						OutputL[#OutputL + 1] = E:EntIndex()
+					else
+						OutputR[#OutputR + 1] = E:EntIndex()
+					end
+				end
+			end
+
+			net.Start("ACF_RequestGearboxInfo")
+				net.WriteEntity(Entity)
+				net.WriteString(util.TableToJSON(Data))
+				net.WriteString(util.TableToJSON(Inputs))
+				net.WriteString(util.TableToJSON(OutputL))
+				net.WriteString(util.TableToJSON(OutputR))
+			net.Send(Ply)
+		end
+	end)
+end
 
 do -- Miscellaneous ------------------------------------
 	function ENT:Enable()

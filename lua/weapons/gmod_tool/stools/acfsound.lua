@@ -1,6 +1,6 @@
 local cat = ((ACF.CustomToolCategory and ACF.CustomToolCategory:GetBool()) and "ACF" or "Construction")
 TOOL.Category = cat
-TOOL.Name = "#Tool.acfsound.name"
+TOOL.Name = "#tool.acfsound.name"
 TOOL.Command = nil
 TOOL.ConfigName = ""
 TOOL.ClientConVar["pitch"]  = "1"
@@ -11,16 +11,6 @@ TOOL.Information = {
 	{ name = "reload" },
 	{ name = "info" }
 }
-
-if CLIENT then
-	language.Add("Tool.acfsound.name", "ACF Sound Replacer")
-	language.Add("Tool.acfsound.desc", "Change sounds of ACF entities")
-
-	language.Add("Tool.acfsound.left", "Apply sound")
-	language.Add("Tool.acfsound.right", "Copy sound")
-	language.Add("Tool.acfsound.reload", "Set default sound")
-	language.Add("Tool.acfsound.0", "Use an empty sound path to disable sound")
-end
 
 ACF.SoundToolSupport = ACF.SoundToolSupport or {}
 
@@ -142,6 +132,22 @@ Sounds.acf_piledriver = {
 	end
 }
 
+Sounds.acf_turret_motor = {
+	GetSound = function(ent)
+		return { Sound = ent.SoundPath or ent.DefaultSound }
+	end,
+	SetSound = function(ent, soundData)
+		ent.SoundPath = soundData.Sound
+
+		if IsValid(ent.Turret) then ent.Turret:UpdateSound() end
+	end,
+	ResetSound = function(ent)
+		ent.SoundPath = ent.DefaultSound
+
+		if IsValid(ent.Turret) then ent.Turret:UpdateSound() end
+	end
+}
+
 local function ReplaceSound(_, Entity, Data)
 	if not IsValid(Entity) then return end
 
@@ -152,8 +158,8 @@ local function ReplaceSound(_, Entity, Data)
 
 	Support.SetSound(Entity, {
 		Sound  = Sound,
-		Pitch  = Pitch or 1,
-		Volume = Volume or 1,
+		Pitch  = ACF.CheckNumber(Pitch, 1),
+		Volume = ACF.CheckNumber(Volume, 1),
 	})
 
 	duplicator.StoreEntityModifier(Entity, "acf_replacesound", { Sound, Pitch or 1, Volume or 1 })
@@ -169,9 +175,9 @@ local function IsReallyValid(trace, ply)
 
 	if not ACF.SoundToolSupport[class] then
 		if string.StartWith(class, "acf_") then
-			ACF.SendNotify(ply, false, class .. " is not supported by the sound tool!")
+			ACF.SendNotify(ply, false, "#tool.acfsound.unsupported_class")
 		else
-			ACF.SendNotify(ply, false, "Only ACF entities are supported by the ACF sound tool!")
+			ACF.SendNotify(ply, false, "#tool.acfsound.unsupported_ent")
 		end
 
 		return false
@@ -187,8 +193,8 @@ function TOOL:LeftClick(trace)
 
 	if not IsReallyValid(trace, owner) then return false end
 	local sound = owner:GetInfo("wire_soundemitter_sound")
-	local pitch = owner:GetInfo("acfsound_pitch")
-	local volume = owner:GetInfo("acfsound_volume")
+	local pitch = owner:GetInfoNum("acfsound_pitch", 1)
+	local volume = owner:GetInfoNum("acfsound_volume", 1)
 
 	ReplaceSound(owner, trace.Entity, { sound, pitch, volume })
 
@@ -234,7 +240,7 @@ if CLIENT then
 	function TOOL.BuildCPanel(panel)
 		local wide = panel:GetWide()
 
-		local Desc = panel:Help("Replace default sounds of certain ACF entities with this tool.\n")
+		local Desc = panel:Help("#tool.acfsound.help")
 		Desc:SetFont("ACF_Control")
 
 		local SoundNameText = vgui.Create("DTextEntry", ValuePanel)
@@ -248,7 +254,7 @@ if CLIENT then
 		panel:AddItem(SoundNameText)
 
 		local SoundBrowserButton = vgui.Create("DButton")
-		SoundBrowserButton:SetText("Open Sound Browser")
+		SoundBrowserButton:SetText("#tool.acfsound.open_browser")
 		SoundBrowserButton:SetFont("ACF_Control")
 		SoundBrowserButton:SetWide(wide)
 		SoundBrowserButton:SetTall(20)
@@ -265,7 +271,7 @@ if CLIENT then
 		SoundPre:SetVisible(true)
 
 		local SoundPrePlay = vgui.Create("DButton", SoundPre)
-		SoundPrePlay:SetText("Play")
+		SoundPrePlay:SetText("#tool.acfsound.play")
 		SoundPrePlay:SetFont("ACF_Control")
 		SoundPrePlay:SetVisible(true)
 		SoundPrePlay:SetIcon("icon16/sound.png")
@@ -274,7 +280,7 @@ if CLIENT then
 		end
 
 		local SoundPreStop = vgui.Create("DButton", SoundPre)
-		SoundPreStop:SetText("Stop")
+		SoundPreStop:SetText("#tool.acfsound.stop")
 		SoundPreStop:SetFont("ACF_Control")
 		SoundPreStop:SetVisible(true)
 		SoundPreStop:SetIcon("icon16/sound_mute.png")
@@ -294,7 +300,7 @@ if CLIENT then
 		end
 
 		local CopyButton = vgui.Create("DButton")
-		CopyButton:SetText("Copy to Clipboard")
+		CopyButton:SetText("#tool.acfsound.copy")
 		CopyButton:SetFont("ACF_Control")
 		CopyButton:SetWide(wide)
 		CopyButton:SetTall(20)
@@ -306,7 +312,7 @@ if CLIENT then
 		panel:AddItem(CopyButton)
 
 		local ClearButton = vgui.Create("DButton")
-		ClearButton:SetText("Clear Sound")
+		ClearButton:SetText("#tool.acfsound.clear")
 		ClearButton:SetFont("ACF_Control")
 		ClearButton:SetWide(wide)
 		ClearButton:SetTall(20)
@@ -318,10 +324,11 @@ if CLIENT then
 		end
 		panel:AddItem(ClearButton)
 
-		panel:NumSlider("Volume", "acfsound_volume", 0.1, 2, 2)
-		panel:NumSlider("Pitch", "acfsound_pitch", 0.1, 2, 2)
+		panel:NumSlider("#tool.acfsound.volume", "acfsound_volume", 0.1, 2, 2)
+		panel:NumSlider("#tool.acfsound.pitch", "acfsound_pitch", 0.1, 2, 2)
 
-		panel:ControlHelp("Adjust the volume and pitch of the sound. Support available for guns and engines only.")
+		local SettingsHelp = panel:ControlHelp("#tool.acfsound.settings_help")
+		SettingsHelp:SetFont("ACF_Control")
 	end
 
 	--[[
