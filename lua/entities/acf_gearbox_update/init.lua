@@ -823,7 +823,7 @@ do -- Movement -----------------------------------------
 			AverageGearboxRPM = AverageGearboxRPM + RPM
 			CombinedRatio = CombinedRatio + math.abs(Ent.TotalRatio)
 			self.InputRPM = self.InputRPM + RPM * GearRatio
-			self.Load = math.Clamp(self.Load + Ent.Load,0,1) * Clutch
+			self.Load = math.Clamp(self.Load + Ent.Load, 0, 1) * Clutch
 			self.Inertia = self.Inertia + Ent.Inertia
 		end
 
@@ -856,7 +856,7 @@ do -- Movement -----------------------------------------
 				AvrgIdle = ( AvrgIdle / Count )
 				local InputRPM = math.max( math.abs(AverageGearboxRPM), math.abs(AverageWheelRPM) )
 
-				local R = self.MinRPM / math.max(AvrgIdle / 2,InputRPM) / math.abs(self.FinalDrive)
+				local R = self.MinRPM / math.max(AvrgIdle / 2, InputRPM) / math.abs(self.FinalDrive)
 				self.Gears[1] = math.Clamp(R, 1, 10)
 			end
 

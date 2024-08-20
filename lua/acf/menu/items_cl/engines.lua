@@ -164,7 +164,7 @@ local function CreateMenu(Menu)
 		self.Selected = Data
 
 		if Data.FlywheelMassUpdate == nil or Data.Displacement == nil then
-			ACF.SetClientData("PrimaryClass","acf_engine")
+			ACF.SetClientData("PrimaryClass", "acf_engine")
 			if MobilityUpdate ~= nil then
 				MobilityUpdate:Remove()
 				MobilityUpdate = nil
@@ -176,9 +176,9 @@ local function CreateMenu(Menu)
 				MobilityUpdate:DefineSetter(function(Panel, _, _, Value)
 					Panel:SetValue(Value)
 					if Value then
-						ACF.SetClientData("PrimaryClass","acf_engine_update")
+						ACF.SetClientData("PrimaryClass", "acf_engine_update")
 					else
-						ACF.SetClientData("PrimaryClass","acf_engine")
+						ACF.SetClientData("PrimaryClass", "acf_engine")
 					end
 					return Value
 				end)

@@ -213,7 +213,7 @@ do -- Serverside settings
 		end)
 
 		local MobilityUpdate = Base:AddCheckBox("#acf.menu.settings.general.mobility_update")
-		MobilityUpdate:SetServerData("MobilityUpdate","OnChange")
+		MobilityUpdate:SetServerData("MobilityUpdate", "OnChange")
 		MobilityUpdate:DefineSetter(function(Panel, _, _, Value)
 			Panel:SetValue(Value)
 

@@ -15,7 +15,7 @@ net.Receive("ACF_SendCopyData", function(_, Player)
 	Selected = Class
 
 	if Class == "acf_gearbox" or Class == "acf_gearbox_update" then
-		ACF.SetClientData("CopiedGearboxData",JSON)
+		ACF.SetClientData("CopiedGearboxData", JSON)
 	end
 
 	if not Disabled[Class] then
