@@ -4,6 +4,8 @@ AddCSLuaFile("shared.lua")
 include("shared.lua")
 
 local ACF = ACF
+local Mobility    = ACF.Mobility
+local MobilityObj = Mobility.Objects
 local MaxDistance = ACF.LinkDistance * ACF.LinkDistance
 
 --===============================================================================================--
@@ -63,20 +65,24 @@ do
 			return false, "Cannot link due to excessive driveshaft angle!"
 		end
 
+		local Owner = Engine:CPPIGetOwner()
 		local Rope
 
-		if tobool(Engine.Owner:GetInfoNum("ACF_MobilityRopeLinks", 1)) then
+		if IsValid(Owner) and tobool(Owner:GetInfoNum("ACF_MobilityRopeLinks", 1)) then
 			Rope = constraint.CreateKeyframeRope(OutPos, 1, "cable/cable2", nil, Engine, Engine.Out, 0, Target, Target.In, 0)
 		end
 
-		local Link = {
-			Rope = Rope,
-			RopeLen = (OutPos - InPos):Length(),
-			ReqTq = 0
-		}
+		local Link = MobilityObj.Link(Engine, Target)
+
+		Link:SetOrigin(Engine.Out)
+		Link:SetTargetPos(Target.In)
+		Link:SetAxis(Direction)
+
+		Link.Rope    = Rope
+		Link.RopeLen = (OutPos - InPos):Length()
 
 		Engine.Gearboxes[Target] = Link
-		Target.Engines[Engine]	 = true
+		Target.Engines[Engine]   = true
 
 		Engine:UpdateOverlay()
 		Target:UpdateOverlay()
@@ -106,6 +112,7 @@ do
 		return true, "Engine unlinked successfully!"
 	end)
 end
+
 --===============================================================================================--
 -- Local Funcs and Vars
 --===============================================================================================--
@@ -388,6 +395,8 @@ do -- Spawn and Update functions
 		Entity.DataStore     = Entities.GetArguments("acf_engine")
 		Entity.revLimiterEnabled = true
 
+		duplicator.ClearEntityModifier(Entity, "mass")
+
 		UpdateEngine(Entity, Data, Class, Engine, Type)
 
 		WireLib.TriggerOutput(Entity, "Entity", Entity)
@@ -399,14 +408,6 @@ do -- Spawn and Update functions
 		HookRun("ACF_OnEntitySpawn", "acf_engine", Entity, Data, Class, Engine)
 
 		Entity:UpdateOverlay(true)
-
-		do -- Mass entity mod removal
-			local EntMods = Data and Data.EntityMods
-
-			if EntMods and EntMods.mass then
-				EntMods.mass = nil
-			end
-		end
 
 		ACF.CheckLegal(Entity)
 
@@ -532,8 +533,6 @@ function ENT:Disable()
 end
 
 function ENT:UpdateOutputs(SelfTbl)
-	if not IsValid(self) then return end
-
 	SelfTbl = SelfTbl or self:GetTable()
 	local FuelUsage = Round(SelfTbl.FuelUsage)
 	local Torque    = SelfTbl.Torque
@@ -653,31 +652,22 @@ end
 
 -- specialized calcmassratio for engines
 function ENT:CalcMassRatio(SelfTbl)
-	SelfTbl = SelfTbl or self:GetTable()
-	local PhysMass 	= 0
-	local TotalMass = 0
-	local Physical, Parented = Contraption.GetEnts(self)
+	SelfTbl        = SelfTbl or self:GetTable()
+	local Con      = self:GetContraption()
+	local PhysMass = 0
+
+	local Physical = Contraption.GetEnts(self)
 
 	for K in pairs(Physical) do
 		local Phys = K:GetPhysicsObject() -- Should always exist, but just in case
 
 		if IsValid(Phys) then
 			local Mass = Phys:GetMass()
-
-			TotalMass = TotalMass + Mass
-			PhysMass  = PhysMass + Mass
+			PhysMass   = PhysMass + Mass
 		end
 	end
 
-	for K in pairs(Parented) do
-		if not Physical[K] then
-			local Phys = K:GetPhysicsObject()
-
-			if IsValid(Phys) then
-				TotalMass = TotalMass + Phys:GetMass()
-			end
-		end
-	end
+	local TotalMass = Con and Con.totalMass or PhysMass
 
 	SelfTbl.MassRatio = PhysMass / TotalMass
 	TotalMass = Round(TotalMass, 2)
@@ -796,6 +786,7 @@ function ENT:CalcRPM(SelfTbl)
 
 		-- Split the torque fairly between the gearboxes who need it
 		for Ent, Link in pairs(BoxesTbl) do
+			Link:Transfer(Link.ReqTq * AvailRatio * MassRatio)
 			Ent:Act(Link.ReqTq * AvailRatio * MassRatio, DeltaTime, MassRatio)
 		end
 	end

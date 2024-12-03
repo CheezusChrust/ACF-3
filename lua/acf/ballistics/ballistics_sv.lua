@@ -2,6 +2,7 @@ local ACF        = ACF
 local Ballistics = ACF.Ballistics
 local Damage     = ACF.Damage
 local Clock      = ACF.Utilities.Clock
+local Effects    = ACF.Utilities.Effects
 local Debug		 = ACF.Debug
 
 Ballistics.Bullets         = Ballistics.Bullets or {}
@@ -23,26 +24,17 @@ local HookRun      = hook.Run
 function Ballistics.BulletClient(Bullet, Type, Hit, HitPos)
 	if Bullet.NoEffect then return end -- No clientside effect will be created for this bullet
 
-	local Effect = EffectData()
-	Effect:SetDamageType(Bullet.Index)
-	Effect:SetStart(Bullet.Flight * 0.1)
-	Effect:SetAttachment(Bullet.Hide and 0 or 1)
+	local IsUpdate = Type == "Update"
+	local EffectTable = {
+		DamageType = Bullet.Index,
+		Start = Bullet.Flight * 0.1,
+		Attachment = Bullet.Hide and 0 or 1,
+		Origin = (IsUpdate and Hit > 0) and HitPos or Bullet.Pos,
+		Scale = IsUpdate and Hit or 0,
+		EntIndex = not IsUpdate and Bullet.Crate or nil,
+	}
 
-	if Type == "Update" then
-		if Hit > 0 then
-			Effect:SetOrigin(HitPos)
-		else
-			Effect:SetOrigin(Bullet.Pos)
-		end
-
-		Effect:SetScale(Hit)
-	else
-		Effect:SetOrigin(Bullet.Pos)
-		Effect:SetEntIndex(Bullet.Crate)
-		Effect:SetScale(0)
-	end
-
-	util.Effect("ACF_Bullet_Effect", Effect, true, true)
+	Effects.CreateEffect("ACF_Bullet_Effect", EffectTable, true, true)
 end
 
 function Ballistics.RemoveBullet(Bullet)
@@ -65,7 +57,9 @@ function Ballistics.RemoveBullet(Bullet)
 end
 
 function Ballistics.CalcBulletFlight(Bullet)
-	if Bullet.KillTime and Clock.CurTime > Bullet.KillTime then
+	local ClockTime = Clock.CurTime
+
+	if Bullet.KillTime and ClockTime > Bullet.KillTime then
 		return Ballistics.RemoveBullet(Bullet)
 	end
 
@@ -73,14 +67,15 @@ function Ballistics.CalcBulletFlight(Bullet)
 		Bullet:PreCalcFlight()
 	end
 
-	local DeltaTime  = Clock.CurTime - Bullet.LastThink
-	local Drag       = Bullet.Flight:GetNormalized() * (Bullet.DragCoef * Bullet.Flight:LengthSqr()) / ACF.DragDiv
+	local DeltaTime  = ClockTime - Bullet.LastThink
+	local Flight     = Bullet.Flight
+	local Drag       = Flight:GetNormalized() * (Bullet.DragCoef * Flight:LengthSqr()) / ACF.DragDiv
 	local Accel      = Bullet.Accel or ACF.Gravity
 	local Correction = 0.5 * (Accel - Drag) * DeltaTime
 
-	Bullet.NextPos   = Bullet.Pos + ACF.Scale * DeltaTime * (Bullet.Flight + Correction)
-	Bullet.Flight    = Bullet.Flight + (Accel - Drag) * DeltaTime
-	Bullet.LastThink = Clock.CurTime
+	Bullet.NextPos   = Bullet.Pos + ACF.Scale * DeltaTime * (Flight + Correction)
+	Bullet.Flight    = Flight + (Accel - Drag) * DeltaTime
+	Bullet.LastThink = ClockTime
 	Bullet.DeltaTime = DeltaTime
 
 	Ballistics.DoBulletsFlight(Bullet)
@@ -275,7 +270,7 @@ function Ballistics.DoBulletsFlight(Bullet)
 
 	if traceRes.Hit then
 		if traceRes.HitSky then
-			if traceRes.HitNormal == Vector(0, 0, -1) then
+			if traceRes.HitNormal == -vector_up then
 				Bullet.SkyLvL = traceRes.HitPos.z
 				Bullet.LifeTime = Clock.CurTime
 			else
@@ -286,7 +281,9 @@ function Ballistics.DoBulletsFlight(Bullet)
 
 			if Ballistics.TestFilter(Entity, Bullet) == false then
 				table.insert(Bullet.Filter, Entity)
-				Ballistics.DoBulletsFlight(Bullet) -- Retries the same trace after adding the entity to the filter, important incase something is embedded in something that shouldn't be hit
+				timer.Simple(0, function()
+					Ballistics.DoBulletsFlight(Bullet) -- Retries the same trace after adding the entity to the filter; important in case something is embedded in something that shouldn't be hit
+				end)
 
 				return
 			end
